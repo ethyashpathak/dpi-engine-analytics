@@ -1,0 +1,17 @@
+# Build files
+*.exe
+*.out
+*.o
+*.obj
+stats.json
+
+# Build folders
+build/
+dist/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
