@@ -1,6 +1,6 @@
 // Multi-threaded DPI Engine - Fixed Version
 // Architecture: Reader -> LB threads -> FP threads -> Output
-
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -354,6 +354,9 @@ private:
 // DPI Engine
 // =============================================================================
 class DPIEngine {
+private:
+  double processing_time_ms_ = 0.0;
+ double packets_per_sec_ = 0.0;
 public:
     struct Config {
         int num_lbs = 2;
@@ -407,6 +410,7 @@ public:
         // Write PCAP header
         const auto& hdr = reader.getGlobalHeader();
         output.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+        auto start_time = std::chrono::high_resolution_clock::now();
         
         // Start all threads
         for (auto& fp : fps_) fp->start();
@@ -512,6 +516,16 @@ public:
         output_thread.join();
         
         output.close();
+
+        //for metrics only
+        auto end_time = std::chrono::high_resolution_clock::now();
+        double time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+        double time_sec = time_ms / 1000.0;
+        double packets_per_sec = stats_.total_packets.load() / time_sec;
+
+        // Store in member variables (we'll use in report)
+        processing_time_ms_ = time_ms;
+        packets_per_sec_ = packets_per_sec;
         
         // Print report
         printReport();
@@ -539,6 +553,8 @@ private:
         std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
         std::cout << "║ Forwarded:          " << std::setw(12) << stats_.forwarded.load() << "                           ║\n";
         std::cout << "║ Dropped:            " << std::setw(12) << stats_.dropped.load() << "                           ║\n";
+        std::cout << "║ Processing Time:   " << std::setw(12) << processing_time_ms_ << " ms                  ║\n";
+        std::cout << "║ Throughput:        " << std::setw(12) << packets_per_sec_ << " pkt/s               ║\n";
         
         // Thread stats
         std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
@@ -585,6 +601,8 @@ j["tcp_packets"] = stats_.tcp_packets.load();
 j["udp_packets"] = stats_.udp_packets.load();
 j["forwarded"] = stats_.forwarded.load();
 j["dropped"] = stats_.dropped.load();
+j["processing_time_ms"] = processing_time_ms_;
+j["packets_per_sec"] = packets_per_sec_;
 
 // Application breakdown
 json apps;
