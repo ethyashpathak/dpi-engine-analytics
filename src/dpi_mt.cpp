@@ -205,6 +205,9 @@ public:
         input_queue_.shutdown();
         if (thread_.joinable()) thread_.join();
     }
+    size_t queueSize() const {
+    return input_queue_.size();
+    }
     
     TSQueue<Packet>& queue() { return input_queue_; }
     
@@ -335,19 +338,49 @@ private:
     std::thread thread_;
     std::atomic<uint64_t> dispatched_{0};
     
+    // void run() {
+    //     while (running_) {
+    //         auto pkt_opt = input_queue_.pop(100);
+    //         if (!pkt_opt) continue;
+            
+    //         // Hash to select FP
+    //         FiveTupleHash hasher;
+    //         size_t fp_idx = hasher(pkt_opt->tuple) % num_fps_;
+            
+    //         fps_[fp_idx]->queue().push(std::move(*pkt_opt));
+    //         dispatched_++;
+    //     }
+    // }
     void run() {
-        while (running_) {
-            auto pkt_opt = input_queue_.pop(100);
-            if (!pkt_opt) continue;
-            
-            // Hash to select FP
-            FiveTupleHash hasher;
-            size_t fp_idx = hasher(pkt_opt->tuple) % num_fps_;
-            
-            fps_[fp_idx]->queue().push(std::move(*pkt_opt));
-            dispatched_++;
+    while (running_) {
+        auto pkt_opt = input_queue_.pop(100);
+        if (!pkt_opt) continue;
+
+        FiveTupleHash hasher;
+        size_t preferred = hasher(pkt_opt->tuple) % num_fps_;
+
+        // If preferred FP is not busy → use it
+        if (fps_[preferred]->queueSize() < 5) {
+            fps_[preferred]->queue().push(std::move(*pkt_opt));
+        } else {
+            // Otherwise find least busy FP
+            size_t best = 0;
+            size_t min_load = fps_[0]->queueSize();
+
+            for (size_t i = 1; i < num_fps_; i++) {
+                size_t load = fps_[i]->queueSize();
+                if (load < min_load) {
+                    min_load = load;
+                    best = i;
+                }
+            }
+
+            fps_[best]->queue().push(std::move(*pkt_opt));
         }
+
+        dispatched_++;
     }
+}
 };
 
 // =============================================================================
